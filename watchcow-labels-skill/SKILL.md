@@ -42,6 +42,7 @@ WatchCow will auto-detect the port (first exposed port), use the container name 
 | `watchcow.desc` | no | image name | Short description |
 | `watchcow.version` | no | `1.0.0` | App version string |
 | `watchcow.maintainer` | no | `WatchCow` | Maintainer name |
+| `watchcow.install_volume` | no | system default volume or `1` | fnOS install volume index; overrides `appcenter-cli default-volume` |
 
 ### Entry Labels (Default Entry)
 

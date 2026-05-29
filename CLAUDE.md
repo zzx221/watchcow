@@ -123,6 +123,7 @@ App appears in fnOS App Center
 | `watchcow.desc` | Image name | App description |
 | `watchcow.version` | `1.0.0` | App version |
 | `watchcow.maintainer` | `WatchCow` | Maintainer name |
+| `watchcow.install_volume` | System default volume or `1` | fnOS install volume index; overrides `appcenter-cli default-volume` |
 
 ### Entry Labels (default entry)
 | Label | Default | Description |

@@ -328,7 +328,7 @@ func (m *Monitor) processContainerStart(ctx context.Context, op *AppOperation) {
 	// Install
 	slog.Info("Installing fnOS app", "app", config.AppName)
 	if m.installer != nil {
-		if err := m.installer.InstallLocal(appDir); err != nil {
+		if err := m.installer.InstallLocal(appDir, op.Labels); err != nil {
 			slog.Error("Failed to install fnOS app", "app", config.AppName, "error", err)
 		} else {
 			if v, exists := m.containers.Load(op.ContainerID); exists {

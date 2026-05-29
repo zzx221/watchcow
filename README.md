@@ -112,6 +112,7 @@ services:
 | `watchcow.desc` | 否 | 镜像名 | 应用描述 |
 | `watchcow.version` | 否 | `1.0.0` | 应用版本 |
 | `watchcow.maintainer` | 否 | `WatchCow` | 维护者 |
+| `watchcow.install_volume` | 否 | 系统默认卷或 `1` | 安装卷编号；优先级高于 `appcenter-cli default-volume` |
 
 ### 入口配置（默认入口）
 

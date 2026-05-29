@@ -5,8 +5,12 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
+
+const fallbackInstallVolume = "1"
+const installVolumeLabel = "watchcow.install_volume"
 
 // Installer handles fnOS application installation via appcenter-cli
 type Installer struct {
@@ -64,10 +68,13 @@ func findAppcenterCLI() (string, error) {
 }
 
 // InstallLocal installs an application from local directory
-func (i *Installer) InstallLocal(appDir string) error {
+func (i *Installer) InstallLocal(appDir string, labels map[string]string) error {
 	slog.Info("Installing fnOS app via appcenter-cli", "appDir", appDir)
 
-	cmd := exec.Command(i.appcenterCLIPath, "install-local")
+	volume := i.resolveInstallVolume(labels)
+	args := []string{"install-local", "--volume", volume}
+
+	cmd := exec.Command(i.appcenterCLIPath, args...)
 	cmd.Dir = appDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -78,6 +85,54 @@ func (i *Installer) InstallLocal(appDir string) error {
 
 	slog.Info("Successfully installed fnOS app")
 	return nil
+}
+
+func (i *Installer) resolveInstallVolume(labels map[string]string) string {
+	if volume := installVolumeFromLabels(labels); volume != "" {
+		slog.Info("Using install volume from label", "label", installVolumeLabel, "volume", volume)
+		return volume
+	}
+
+	if volume := i.defaultInstallVolume(); volume != "" {
+		slog.Info("Using default install volume from appcenter-cli", "volume", volume)
+		return volume
+	}
+
+	slog.Info("No install volume configured, using fallback volume", "volume", fallbackInstallVolume)
+	return fallbackInstallVolume
+}
+
+func installVolumeFromLabels(labels map[string]string) string {
+	if labels == nil {
+		return ""
+	}
+
+	return parseInstallVolume(labels[installVolumeLabel])
+}
+
+func (i *Installer) defaultInstallVolume() string {
+	cmd := exec.Command(i.appcenterCLIPath, "default-volume")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		slog.Debug("Failed to check default install volume", "error", err, "output", strings.TrimSpace(string(output)))
+		return ""
+	}
+
+	return parseInstallVolume(string(output))
+}
+
+func parseInstallVolume(output string) string {
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" {
+		return ""
+	}
+
+	volumeIndex, err := strconv.Atoi(trimmed)
+	if err != nil || volumeIndex <= 0 {
+		return ""
+	}
+
+	return strconv.Itoa(volumeIndex)
 }
 
 // Uninstall uninstalls an application
