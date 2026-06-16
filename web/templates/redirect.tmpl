@@ -36,13 +36,13 @@
     (function() {
         // Redirect host components (from config, may include path and query)
         const REDIRECT_BASE = '{{.RedirectBase | js}}';   // e.g., "https://example.com" or "example.com:8080"
-        const REDIRECT_PATH = '{{.RedirectPath}}';        // e.g., "/api/v1" (sanitized)
-        const REDIRECT_QUERY = '{{.RedirectQuery}}';      // e.g., "x=1" (sanitized)
+        const REDIRECT_PATH = '{{.RedirectPath | js}}';   // e.g., "/api/v1" (sanitized)
+        const REDIRECT_QUERY = '{{.RedirectQuery | js}}'; // e.g., "x=1" (sanitized)
         // Container info
         const CONTAINER_PORT = '{{.ContainerPort | js}}';
         // Request components
-        const PATH = '{{.Path}}';                         // e.g., "/path2" (sanitized)
-        const QUERY_STRING = '{{.QueryString}}';          // e.g., "y=2" (sanitized)
+        const PATH = '{{.Path | js}}';                    // e.g., "/path2" (sanitized)
+        const QUERY_STRING = '{{.QueryString | js}}';     // e.g., "y=2" (sanitized)
 
         const statusEl = document.getElementById('status');
         const errorEl = document.getElementById('error');

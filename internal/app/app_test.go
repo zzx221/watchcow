@@ -100,6 +100,27 @@ func TestApp_HasRedirect(t *testing.T) {
 	})
 }
 
+func TestDefaultAppName(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "simple", in: "nginx", want: "watchcow.nginx"},
+		{name: "leading slash", in: "/my_app", want: "watchcow.my-app"},
+		{name: "mixed case and punctuation", in: "My_App.1", want: "watchcow.my-app1"},
+		{name: "empty after sanitize", in: "...", want: "watchcow.app"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := DefaultAppName(tt.in); got != tt.want {
+				t.Errorf("DefaultAppName(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRegistry_RegisterAndGet(t *testing.T) {
 	registry := NewRegistry()
 

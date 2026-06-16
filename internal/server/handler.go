@@ -16,8 +16,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"watchcow/internal/app"
 	"watchcow/internal/docker"
 	"watchcow/web"
+)
+
+const (
+	maxDashboardIconBytes = 10 << 20
+	maxDashboardFormBytes = maxDashboardIconBytes + (1 << 20)
 )
 
 // ContainerLister provides container listing capability.
@@ -282,6 +288,7 @@ func (h *DashboardHandler) handleContainerSave(w http.ResponseWriter, r *http.Re
 	// Parse form (supports both multipart and urlencoded)
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "multipart/form-data") {
+		r.Body = http.MaxBytesReader(w, r.Body, maxDashboardFormBytes)
 		if err := r.ParseMultipartForm(10 << 20); err != nil {
 			h.renderError(w, http.StatusBadRequest, "解析表单失败")
 			return
@@ -306,9 +313,9 @@ func (h *DashboardHandler) handleContainerSave(w http.ResponseWriter, r *http.Re
 
 	// Auto-generate appName (not user-editable)
 	// Include first host port for uniqueness
-	appName := "watchcow." + container.Name
+	appName := app.DefaultAppName(container.Name)
 	for _, hostPort := range container.Ports {
-		appName = appName + "." + hostPort
+		appName = appName + "." + app.SanitizeAppNamePart(hostPort)
 		break
 	}
 	config.AppName = appName
@@ -422,7 +429,7 @@ func (h *DashboardHandler) handleContainerDelete(w http.ResponseWriter, r *http.
 // Image processing (square padding, resizing) is handled by fpkgen.handleIcons
 // during app generation, keeping the install flow consistent with label-based icons.
 func (h *DashboardHandler) processIcon(file io.Reader) (string, error) {
-	imgData, err := io.ReadAll(file)
+	imgData, err := readLimited(file, maxDashboardIconBytes)
 	if err != nil {
 		return "", fmt.Errorf("read file: %w", err)
 	}
@@ -434,6 +441,18 @@ func (h *DashboardHandler) processIcon(file io.Reader) (string, error) {
 	}
 
 	return base64.StdEncoding.EncodeToString(imgData), nil
+}
+
+func readLimited(r io.Reader, maxBytes int64) ([]byte, error) {
+	limited := &io.LimitedReader{R: r, N: maxBytes + 1}
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("file exceeds maximum size of %d bytes", maxBytes)
+	}
+	return data, nil
 }
 
 // parseEntriesFromForm extracts entries from form data.
@@ -473,7 +492,7 @@ func (h *DashboardHandler) parseEntriesFromForm(r *http.Request) []StoredEntry {
 func (h *DashboardHandler) createDefaultConfig(container *ContainerInfo) *StoredConfig {
 	config := &StoredConfig{
 		Key:         container.Key,
-		AppName:     "watchcow." + container.Name,
+		AppName:     app.DefaultAppName(container.Name),
 		DisplayName: container.Name,
 		Description: container.Image,
 		Version:     "1.0.0",

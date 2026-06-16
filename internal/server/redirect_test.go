@@ -159,8 +159,10 @@ func TestRedirectHandler_WithQueryString(t *testing.T) {
 	}
 
 	body := w.Body.String()
-	if !strings.Contains(body, "foo=bar") {
-		t.Errorf("response should contain query string 'foo=bar'")
+	for _, part := range []string{"foo", "bar", "baz", "123"} {
+		if !strings.Contains(body, part) {
+			t.Errorf("response should preserve query component %q", part)
+		}
 	}
 }
 
@@ -182,6 +184,29 @@ func TestRedirectHandler_AppNotFound(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "App not found") {
 		t.Errorf("response should contain 'App not found' error message")
+	}
+}
+
+func TestRedirectHandler_ErrorEscapesHTML(t *testing.T) {
+	registry := createTestRegistry()
+	handler := NewRedirectHandler(registry)
+
+	req := httptest.NewRequest("GET", "/redirect/%3Cimg%20src=x%20onerror=alert(1)%3E/_/path", nil)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", resp.StatusCode)
+	}
+
+	body := w.Body.String()
+	if strings.Contains(body, `<img src=x onerror=alert(1)>`) {
+		t.Fatalf("response contains unescaped img tag: %s", body)
+	}
+	if !strings.Contains(body, "&lt;img src=x onerror=alert(1)&gt;") {
+		t.Errorf("response should contain escaped img tag, got: %s", body)
 	}
 }
 

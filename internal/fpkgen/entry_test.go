@@ -585,6 +585,64 @@ func TestParseEntries_NamedEntryRedirect(t *testing.T) {
 	}
 }
 
+func TestParseEntries_IgnoresInvalidEntryNames(t *testing.T) {
+	labels := map[string]string{
+		"watchcow.enable":                    "true",
+		"watchcow.../evil.service_port":      "8081",
+		"watchcow.admin/panel.service_port":  "8082",
+		"watchcow.enable.service_port":       "8083",
+		"watchcow.valid_entry.service_port":  "8084",
+		"watchcow.valid-entry.service_port":  "8085",
+		"watchcow.validEntry.redirect":       "example.com",
+		"watchcow.validEntry.service_port":   "8086",
+		"watchcow.display_name.service_port": "8087",
+	}
+
+	entries := ParseEntries(labels, "Test App", "https://default.icon/icon.png", "9090")
+
+	names := make(map[string]bool)
+	for _, entry := range entries {
+		names[entry.Name] = true
+	}
+
+	for _, invalid := range []string{"../evil", "admin/panel", "enable", "display_name"} {
+		if names[invalid] {
+			t.Errorf("invalid entry %q should have been ignored", invalid)
+		}
+	}
+	for _, valid := range []string{"valid_entry", "valid-entry", "validEntry"} {
+		if !names[valid] {
+			t.Errorf("valid entry %q should be present", valid)
+		}
+	}
+}
+
+func TestIsValidEntryName(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{name: "lower", in: "admin", want: true},
+		{name: "upper", in: "Admin01", want: true},
+		{name: "dash", in: "admin-panel", want: true},
+		{name: "underscore", in: "admin_panel", want: true},
+		{name: "slash", in: "admin/panel", want: false},
+		{name: "dot", in: "admin.panel", want: false},
+		{name: "parent path", in: "../admin", want: false},
+		{name: "reserved", in: "enable", want: false},
+		{name: "empty", in: "", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isValidEntryName(tt.in); got != tt.want {
+				t.Errorf("isValidEntryName(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestGenerateUIConfigJSON_Redirect tests JSON generation with redirect mode
 func TestGenerateUIConfigJSON_Redirect(t *testing.T) {
 	config := &AppConfig{

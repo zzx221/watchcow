@@ -69,11 +69,11 @@ func setupTestHandler(t *testing.T) (*DashboardHandler, *DashboardStorage, *mock
 	lister := &mockContainerLister{
 		containers: []docker.ContainerInfo{
 			{
-				ID:    "abc123",
-				Name:  "nginx",
-				Image: "nginx:alpine",
-				State: "running",
-				Ports: map[string]string{"80": "8080"},
+				ID:     "abc123",
+				Name:   "nginx",
+				Image:  "nginx:alpine",
+				State:  "running",
+				Ports:  map[string]string{"80": "8080"},
 				Labels: map[string]string{},
 			},
 			{
@@ -223,6 +223,65 @@ func TestDashboardHandler_ContainerSave(t *testing.T) {
 		if trigger.triggerCalls[0].storedConfig.AppName != "watchcow.nginx.8080" {
 			t.Errorf("TriggerInstall storedConfig.AppName = %q, want %q", trigger.triggerCalls[0].storedConfig.AppName, "watchcow.nginx.8080")
 		}
+	}
+}
+
+func TestDashboardHandler_ContainerSave_SanitizesAppName(t *testing.T) {
+	handler, storage, trigger := setupTestHandler(t)
+
+	handler.lister = &mockContainerLister{
+		containers: []docker.ContainerInfo{
+			{
+				ID:     "ghi789",
+				Name:   "my_app",
+				Image:  "my_app:latest",
+				State:  "running",
+				Ports:  map[string]string{"80": "8080"},
+				Labels: map[string]string{},
+			},
+		},
+	}
+
+	form := url.Values{
+		"display_name": {"My App"},
+		"entry_port":   {"8080"},
+	}
+	req := httptest.NewRequest("POST", "/containers/ghi789", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = setChiURLParam(req, "id", "ghi789")
+	w := httptest.NewRecorder()
+
+	handler.handleContainerSave(w, req)
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", resp.StatusCode, w.Body.String())
+	}
+
+	saved := storage.Get(ContainerKey("my_app:latest|80:8080"))
+	if saved == nil {
+		t.Fatal("config should be saved")
+	}
+	if saved.AppName != "watchcow.my-app.8080" {
+		t.Errorf("AppName = %q, want %q", saved.AppName, "watchcow.my-app.8080")
+	}
+	if len(trigger.triggerCalls) != 1 {
+		t.Fatalf("expected 1 TriggerInstall call, got %d", len(trigger.triggerCalls))
+	}
+	if trigger.triggerCalls[0].storedConfig.AppName != "watchcow.my-app.8080" {
+		t.Errorf("trigger AppName = %q, want %q", trigger.triggerCalls[0].storedConfig.AppName, "watchcow.my-app.8080")
+	}
+}
+
+func TestDashboardHandler_ProcessIconRejectsOversizedFile(t *testing.T) {
+	handler, _, _ := setupTestHandler(t)
+
+	_, err := handler.processIcon(strings.NewReader(strings.Repeat("x", maxDashboardIconBytes+1)))
+	if err == nil {
+		t.Fatal("processIcon should reject oversized icon data")
+	}
+	if !strings.Contains(err.Error(), "exceeds maximum size") {
+		t.Errorf("error = %q, want size limit error", err.Error())
 	}
 }
 

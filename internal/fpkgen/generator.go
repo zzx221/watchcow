@@ -10,6 +10,8 @@ import (
 
 	dockercontainer "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
+
+	"watchcow/internal/app"
 )
 
 // Generator handles fnOS application package generation from Docker containers
@@ -175,9 +177,7 @@ func (g *Generator) extractConfig(container *dockercontainer.InspectResponse) *A
 	name := strings.TrimPrefix(container.Name, "/")
 	labels := container.Config.Labels
 
-	// Generate sanitized app name
-	sanitizedName := sanitizeAppName(name)
-	appName := getLabel(labels, "watchcow.appname", fmt.Sprintf("watchcow.%s", sanitizedName))
+	appName := getLabel(labels, "watchcow.appname", app.DefaultAppName(name))
 
 	defaultIcon := getLabel(labels, "watchcow.icon", buildIconURLFromImage(container.Config.Image)) // URL → URLIconSource
 	displayName := getLabel(labels, "watchcow.display_name", prettifyName(name))
@@ -274,19 +274,6 @@ func (g *Generator) Close() error {
 }
 
 // Helper functions
-
-// sanitizeAppName ensures the app name conforms to fnOS requirements
-func sanitizeAppName(name string) string {
-	name = strings.ToLower(name)
-	name = strings.ReplaceAll(name, "_", "-")
-	var result strings.Builder
-	for _, c := range name {
-		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
-			result.WriteRune(c)
-		}
-	}
-	return result.String()
-}
 
 // getLabel gets a label value with fallback
 func getLabel(labels map[string]string, key, fallback string) string {
@@ -426,6 +413,28 @@ var entryFields = map[string]bool{
 	"redirect":            true,
 }
 
+var reservedEntryNames = map[string]bool{
+	"enable":         true,
+	"install":        true,
+	"install_volume": true,
+	"appname":        true,
+	"display_name":   true,
+	"desc":           true,
+	"version":        true,
+	"maintainer":     true,
+	"service_port":   true,
+	"protocol":       true,
+	"path":           true,
+	"ui_type":        true,
+	"all_users":      true,
+	"icon":           true,
+	"title":          true,
+	"file_types":     true,
+	"no_display":     true,
+	"control":        true,
+	"redirect":       true,
+}
+
 // isEntryField checks if a field name is an entry configuration field
 func isEntryField(field string) bool {
 	if entryFields[field] {
@@ -436,6 +445,24 @@ func isEntryField(field string) bool {
 		return true
 	}
 	return false
+}
+
+// isValidEntryName restricts label-derived entry names to safe path/config segments.
+func isValidEntryName(name string) bool {
+	if name == "" || reservedEntryNames[name] {
+		return false
+	}
+	for _, c := range name {
+		if (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			c == '_' ||
+			c == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // hasDefaultEntry checks if there's a default entry configuration in labels
@@ -533,7 +560,7 @@ func ParseEntries(labels map[string]string, displayName string, defaultIcon stri
 		parts := strings.SplitN(suffix, ".", 2)
 
 		// Check if this is a named entry field (e.g., "admin.service_port")
-		if len(parts) == 2 && isEntryField(parts[1]) {
+		if len(parts) == 2 && isEntryField(parts[1]) && isValidEntryName(parts[0]) {
 			entryNames[parts[0]] = true
 		}
 	}

@@ -8,8 +8,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
+
+const socketFileMode os.FileMode = 0660
 
 // MonitorInterface defines the interface for Docker monitor
 type MonitorInterface interface {
@@ -24,6 +27,8 @@ type Server struct {
 	listener   net.Listener
 	monitor    MonitorInterface
 	ready      chan struct{}
+	stopOnce   sync.Once
+	stopErr    error
 }
 
 // New creates a new Unix socket HTTP server with optional monitor
@@ -63,8 +68,8 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	s.listener = listener
 
-	// Set socket permissions for web server access
-	if err := os.Chmod(s.socketPath, 0666); err != nil {
+	// Set socket permissions for web server access.
+	if err := os.Chmod(s.socketPath, socketFileMode); err != nil {
 		listener.Close()
 		return fmt.Errorf("failed to set socket permissions: %w", err)
 	}
@@ -99,37 +104,36 @@ func (s *Server) Start(ctx context.Context) error {
 
 // Stop gracefully stops the server and monitor
 func (s *Server) Stop(ctx context.Context) error {
-	// Stop monitor first
-	if s.monitor != nil {
-		s.monitor.Stop()
-	}
 	return s.shutdown()
 }
 
 // shutdown performs graceful shutdown of HTTP server
 func (s *Server) shutdown() error {
-	slog.Info("Shutting down Unix socket server...")
+	s.stopOnce.Do(func() {
+		slog.Info("Shutting down Unix socket server...")
 
-	// Stop monitor
-	if s.monitor != nil {
-		s.monitor.Stop()
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := s.httpServer.Shutdown(ctx); err != nil {
-		slog.Warn("HTTP server shutdown error", "error", err)
-	}
-
-	// Remove socket file
-	if s.socketPath != "" {
-		if err := os.Remove(s.socketPath); err != nil && !os.IsNotExist(err) {
-			slog.Warn("Failed to remove socket file", "path", s.socketPath, "error", err)
+		// Stop monitor
+		if s.monitor != nil {
+			s.monitor.Stop()
 		}
-	}
 
-	return nil
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := s.httpServer.Shutdown(ctx); err != nil {
+			slog.Warn("HTTP server shutdown error", "error", err)
+			s.stopErr = err
+		}
+
+		// Remove socket file
+		if s.socketPath != "" {
+			if err := os.Remove(s.socketPath); err != nil && !os.IsNotExist(err) {
+				slog.Warn("Failed to remove socket file", "path", s.socketPath, "error", err)
+			}
+		}
+	})
+
+	return s.stopErr
 }
 
 // Ready returns a channel that is closed when the server is ready to accept connections

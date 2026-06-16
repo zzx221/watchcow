@@ -141,7 +141,7 @@ func (h *RedirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *RedirectHandler) outputError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	fmt.Fprintf(w, "<html><body><h1>Error</h1><p>%s</p></body></html>", msg)
+	fmt.Fprintf(w, "<html><body><h1>Error</h1><p>%s</p></body></html>", template.HTMLEscapeString(msg))
 }
 
 // outputHTML outputs the redirect HTML page with JavaScript

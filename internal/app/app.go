@@ -2,7 +2,10 @@
 // App represents a watchcow-managed application, parsed from container labels.
 package app
 
-import "sync"
+import (
+	"strings"
+	"sync"
+)
 
 // Status represents the current state of an app
 type Status string
@@ -14,6 +17,30 @@ const (
 	StatusStopped     Status = "stopped"     // Stopped
 	StatusUninstalled Status = "uninstalled" // Uninstalled
 )
+
+// SanitizeAppNamePart keeps app name components within fnOS-friendly ASCII.
+func SanitizeAppNamePart(name string) string {
+	name = strings.ToLower(strings.TrimPrefix(name, "/"))
+	name = strings.ReplaceAll(name, "_", "-")
+
+	var result strings.Builder
+	for _, c := range name {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
+			result.WriteRune(c)
+		}
+	}
+
+	sanitized := result.String()
+	if sanitized == "" {
+		return "app"
+	}
+	return sanitized
+}
+
+// DefaultAppName returns the default WatchCow app name for a container.
+func DefaultAppName(containerName string) string {
+	return "watchcow." + SanitizeAppNamePart(containerName)
+}
 
 // EntryControl represents permission settings for an entry
 type EntryControl struct {

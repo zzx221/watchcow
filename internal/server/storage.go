@@ -115,9 +115,7 @@ func (s *DashboardStorage) Get(key ContainerKey) *StoredConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if cfg, ok := s.configs[key]; ok {
-		// Return a copy to avoid race conditions
-		copy := *cfg
-		return &copy
+		return cloneStoredConfig(cfg)
 	}
 	return nil
 }
@@ -127,7 +125,7 @@ func (s *DashboardStorage) Set(cfg *StoredConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.configs[cfg.Key] = cfg
+	s.configs[cfg.Key] = cloneStoredConfig(cfg)
 	return s.save()
 }
 
@@ -147,8 +145,7 @@ func (s *DashboardStorage) List() []*StoredConfig {
 
 	result := make([]*StoredConfig, 0, len(s.configs))
 	for _, cfg := range s.configs {
-		copy := *cfg
-		result = append(result, &copy)
+		result = append(result, cloneStoredConfig(cfg))
 	}
 	return result
 }
@@ -200,4 +197,20 @@ func (s *DashboardStorage) GetByKey(key string) *docker.StoredConfig {
 	}
 
 	return result
+}
+
+func cloneStoredConfig(cfg *StoredConfig) *StoredConfig {
+	if cfg == nil {
+		return nil
+	}
+	copy := *cfg
+	if cfg.Entries != nil {
+		copy.Entries = append([]StoredEntry(nil), cfg.Entries...)
+		for i := range copy.Entries {
+			if cfg.Entries[i].FileTypes != nil {
+				copy.Entries[i].FileTypes = append([]string(nil), cfg.Entries[i].FileTypes...)
+			}
+		}
+	}
+	return &copy
 }

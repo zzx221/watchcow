@@ -13,6 +13,12 @@ import (
 	"time"
 )
 
+const maxIconBytes int64 = 10 << 20
+
+var iconHTTPClient = &http.Client{
+	Timeout: 60 * time.Second,
+}
+
 // IconSource represents an abstract icon source that can be loaded into an image.
 //
 // Two modes correspond to two configuration sources:
@@ -61,11 +67,16 @@ func (s *URLIconSource) loadFromFile() (image.Image, error) {
 		return nil, err
 	}
 
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file %s: %w", path, err)
 	}
+	defer f.Close()
 
+	data, err := readAllLimited(f, maxIconBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file %s: %w", path, err)
+	}
 	return decodeImageData(data)
 }
 
@@ -91,11 +102,7 @@ func resolveFilePath(fileURL string, basePath string) (string, error) {
 
 // loadFromHTTP loads an icon from an HTTP(S) URL.
 func (s *URLIconSource) loadFromHTTP() (image.Image, error) {
-	client := &http.Client{
-		Timeout: 60 * time.Second,
-	}
-
-	resp, err := client.Get(s.URL)
+	resp, err := iconHTTPClient.Get(s.URL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch URL: %w", err)
 	}
@@ -105,7 +112,7 @@ func (s *URLIconSource) loadFromHTTP() (image.Image, error) {
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := readAllLimited(resp.Body, maxIconBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
@@ -126,12 +133,25 @@ func (s *Base64IconSource) Load() (image.Image, error) {
 		return nil, fmt.Errorf("empty base64 data")
 	}
 
-	data, err := base64.StdEncoding.DecodeString(s.Data)
+	decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(s.Data))
+	data, err := readAllLimited(decoder, maxIconBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode base64: %w", err)
 	}
 
 	return decodeImageData(data)
+}
+
+func readAllLimited(r io.Reader, maxBytes int64) ([]byte, error) {
+	limited := &io.LimitedReader{R: r, N: maxBytes + 1}
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("icon exceeds maximum size of %d bytes", maxBytes)
+	}
+	return data, nil
 }
 
 // String implements IconSource.String.

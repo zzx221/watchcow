@@ -1,14 +1,23 @@
 package fpkgen
 
 import (
+	"bytes"
 	"encoding/base64"
 	"image"
 	"image/png"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
 
 func TestURLIconSource_LoadFromFile(t *testing.T) {
 	// Create a test PNG file
@@ -84,6 +93,56 @@ func TestURLIconSource_RelativePathRequiresBasePath(t *testing.T) {
 	}
 }
 
+func TestURLIconSource_LoadFromFileRejectsOversizedFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "huge.png")
+
+	f, err := os.Create(tmpFile)
+	if err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	if err := f.Truncate(maxIconBytes + 1); err != nil {
+		f.Close()
+		t.Fatalf("Failed to resize test file: %v", err)
+	}
+	f.Close()
+
+	source := &URLIconSource{URL: "file://" + tmpFile}
+	_, err = source.Load()
+	if err == nil {
+		t.Fatal("expected oversized file to be rejected")
+	}
+	if !strings.Contains(err.Error(), "maximum size") {
+		t.Errorf("error = %q, want maximum size error", err.Error())
+	}
+}
+
+func TestURLIconSource_LoadFromHTTPRejectsOversizedResponse(t *testing.T) {
+	oldClient := iconHTTPClient
+	t.Cleanup(func() { iconHTTPClient = oldClient })
+
+	iconHTTPClient = &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Status:     "200 OK",
+				Body:       io.NopCloser(bytes.NewReader(make([]byte, maxIconBytes+1))),
+				Header:     make(http.Header),
+				Request:    r,
+			}, nil
+		}),
+	}
+
+	source := &URLIconSource{URL: "http://example.test/icon.png"}
+	_, err := source.Load()
+	if err == nil {
+		t.Fatal("expected oversized HTTP response to be rejected")
+	}
+	if !strings.Contains(err.Error(), "maximum size") {
+		t.Errorf("error = %q, want maximum size error", err.Error())
+	}
+}
+
 func TestURLIconSource_UnsupportedScheme(t *testing.T) {
 	source := &URLIconSource{URL: "ftp://example.com/icon.png"}
 	_, err := source.Load()
@@ -141,6 +200,19 @@ func TestBase64IconSource_InvalidBase64(t *testing.T) {
 	_, err := source.Load()
 	if err == nil {
 		t.Error("Expected error for invalid base64 data")
+	}
+}
+
+func TestBase64IconSource_RejectsOversizedData(t *testing.T) {
+	data := base64.StdEncoding.EncodeToString(make([]byte, maxIconBytes+1))
+	source := &Base64IconSource{Data: data}
+
+	_, err := source.Load()
+	if err == nil {
+		t.Fatal("expected oversized base64 data to be rejected")
+	}
+	if !strings.Contains(err.Error(), "maximum size") {
+		t.Errorf("error = %q, want maximum size error", err.Error())
 	}
 }
 
@@ -235,14 +307,14 @@ func TestIsValidBase64(t *testing.T) {
 		input string
 		want  bool
 	}{
-		{"short", false},                                  // Too short
-		{strings.Repeat("AAAA", 30), true},                // Valid base64
-		{strings.Repeat("!!!!", 30), false},               // Invalid characters
-		{"", false},                                       // Empty
-		{strings.Repeat("A", 99), false},                  // Just under 100
-		{strings.Repeat("A", 100), true},                  // Exactly 100
-		{strings.Repeat("A", 101) + "!", true},            // Only first 100 chars checked
-		{strings.Repeat("AAAA", 25) + "====", true},       // With padding
+		{"short", false},                            // Too short
+		{strings.Repeat("AAAA", 30), true},          // Valid base64
+		{strings.Repeat("!!!!", 30), false},         // Invalid characters
+		{"", false},                                 // Empty
+		{strings.Repeat("A", 99), false},            // Just under 100
+		{strings.Repeat("A", 100), true},            // Exactly 100
+		{strings.Repeat("A", 101) + "!", true},      // Only first 100 chars checked
+		{strings.Repeat("AAAA", 25) + "====", true}, // With padding
 	}
 
 	for _, tt := range tests {

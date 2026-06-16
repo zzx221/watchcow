@@ -281,6 +281,44 @@ func TestDashboardStorage_GetReturnsCopy(t *testing.T) {
 	}
 }
 
+func TestDashboardStorage_GetReturnsDeepCopy(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.Setenv("TRIM_PKGETC", tmpDir)
+	defer os.Unsetenv("TRIM_PKGETC")
+
+	storage, err := NewDashboardStorage()
+	if err != nil {
+		t.Fatalf("NewDashboardStorage() error = %v", err)
+	}
+
+	key := ContainerKey("nginx|80:8080")
+	original := &StoredConfig{
+		Key:     key,
+		AppName: "original",
+		Entries: []StoredEntry{
+			{Name: "admin", FileTypes: []string{"txt"}},
+		},
+	}
+	if err := storage.Set(original); err != nil {
+		t.Fatalf("Set() error = %v", err)
+	}
+
+	original.Entries[0].Name = "changed-after-set"
+	original.Entries[0].FileTypes[0] = "md"
+
+	got := storage.Get(key)
+	got.Entries[0].Name = "changed-after-get"
+	got.Entries[0].FileTypes[0] = "json"
+
+	got2 := storage.Get(key)
+	if got2.Entries[0].Name != "admin" {
+		t.Errorf("stored entry name = %q, want %q", got2.Entries[0].Name, "admin")
+	}
+	if got2.Entries[0].FileTypes[0] != "txt" {
+		t.Errorf("stored file type = %q, want %q", got2.Entries[0].FileTypes[0], "txt")
+	}
+}
+
 func TestDashboardStorage_FallbackPath(t *testing.T) {
 	// Unset TRIM_PKGETC to use fallback
 	os.Unsetenv("TRIM_PKGETC")

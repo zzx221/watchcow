@@ -72,6 +72,7 @@ type Monitor struct {
 	installer      *fpkgen.Installer
 	configProvider ConfigProvider
 	stopCh         chan struct{}
+	stopOnce       sync.Once
 
 	// Track all container states
 	containers sync.Map // map[containerID]*ContainerState
@@ -525,16 +526,37 @@ func (m *Monitor) listenToDockerEvents(ctx context.Context) {
 			return
 		case <-m.stopCh:
 			return
-		case err := <-errChan:
-			if err != nil {
-				slog.Warn("Docker event stream error, reconnecting...", "error", err)
-				time.Sleep(5 * time.Second)
-				go m.listenToDockerEvents(ctx)
+		case err, ok := <-errChan:
+			if !ok {
+				m.reconnectDockerEvents(ctx, "Docker event error channel closed, reconnecting...")
 				return
 			}
-		case event := <-eventChan:
+			if err != nil {
+				m.reconnectDockerEvents(ctx, "Docker event stream error, reconnecting...", "error", err)
+				return
+			}
+		case event, ok := <-eventChan:
+			if !ok {
+				m.reconnectDockerEvents(ctx, "Docker event channel closed, reconnecting...")
+				return
+			}
 			m.handleDockerEvent(ctx, event)
 		}
+	}
+}
+
+func (m *Monitor) reconnectDockerEvents(ctx context.Context, msg string, args ...any) {
+	slog.Warn(msg, args...)
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return
+	case <-m.stopCh:
+		return
+	case <-timer.C:
+		go m.listenToDockerEvents(ctx)
 	}
 }
 
@@ -642,7 +664,7 @@ func extractPorts(portMap nat.PortMap) map[string]string {
 func getAppNameFromLabels(labels map[string]string, containerName string) string {
 	appName := labels["watchcow.appname"]
 	if appName == "" {
-		appName = "watchcow." + containerName
+		appName = app.DefaultAppName(containerName)
 	}
 	return appName
 }
@@ -725,17 +747,19 @@ func (m *Monitor) scanContainers(ctx context.Context) {
 
 // Stop stops the monitor
 func (m *Monitor) Stop() {
-	close(m.stopCh)
+	m.stopOnce.Do(func() {
+		close(m.stopCh)
 
-	if m.generator != nil {
-		m.generator.Close()
-	}
-
-	if m.cli != nil {
-		if err := m.cli.Close(); err != nil {
-			slog.Warn("Error closing Docker client", "error", err)
+		if m.generator != nil {
+			m.generator.Close()
 		}
-	}
+
+		if m.cli != nil {
+			if err := m.cli.Close(); err != nil {
+				slog.Warn("Error closing Docker client", "error", err)
+			}
+		}
+	})
 }
 
 // Registry returns the app registry for external access (e.g., by server)
