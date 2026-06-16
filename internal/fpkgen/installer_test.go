@@ -57,6 +57,59 @@ func TestInstallLocalFallsBackToVolumeOneWithoutDefaultVolume(t *testing.T) {
 	}
 }
 
+func TestStartAppSkipsStartWhenAppcenterStatusIsStarting(t *testing.T) {
+	installer, _, logPath := newFakeAppcenterCLI(t, "2", "0")
+	t.Setenv("APP_STATUS_OUTPUT", "starting\n")
+
+	if err := installer.StartApp("watchcow.xunlei"); err != nil {
+		t.Fatalf("StartApp() error = %v", err)
+	}
+
+	got := readCommandLog(t, logPath)
+	want := []string{
+		"status watchcow.xunlei",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("commands = %q, want %q", got, want)
+	}
+}
+
+func TestStartAppRunsStartWhenAppcenterStatusIsNotStarting(t *testing.T) {
+	installer, _, logPath := newFakeAppcenterCLI(t, "2", "0")
+	t.Setenv("APP_STATUS_OUTPUT", "running\n")
+
+	if err := installer.StartApp("watchcow.xunlei"); err != nil {
+		t.Fatalf("StartApp() error = %v", err)
+	}
+
+	got := readCommandLog(t, logPath)
+	want := []string{
+		"status watchcow.xunlei",
+		"start watchcow.xunlei",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("commands = %q, want %q", got, want)
+	}
+}
+
+func TestStartAppRunsStartWhenAppcenterStatusFails(t *testing.T) {
+	installer, _, logPath := newFakeAppcenterCLI(t, "2", "0")
+	t.Setenv("APP_STATUS_EXIT", "1")
+
+	if err := installer.StartApp("watchcow.xunlei"); err != nil {
+		t.Fatalf("StartApp() error = %v", err)
+	}
+
+	got := readCommandLog(t, logPath)
+	want := []string{
+		"status watchcow.xunlei",
+		"start watchcow.xunlei",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("commands = %q, want %q", got, want)
+	}
+}
+
 func TestParseInstallVolume(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -100,6 +153,13 @@ fi
 if [ "$1" = "install-local" ]; then
   exit 0
 fi
+if [ "$1" = "status" ]; then
+  printf '%s\n' "$APP_STATUS_OUTPUT"
+  exit "$APP_STATUS_EXIT"
+fi
+if [ "$1" = "start" ]; then
+  exit "$START_EXIT"
+fi
 exit 1
 `
 
@@ -110,6 +170,9 @@ exit 1
 	t.Setenv("COMMAND_LOG", logPath)
 	t.Setenv("DEFAULT_VOLUME_OUTPUT", defaultVolumeOutput)
 	t.Setenv("DEFAULT_VOLUME_EXIT", defaultVolumeExit)
+	t.Setenv("APP_STATUS_OUTPUT", "running")
+	t.Setenv("APP_STATUS_EXIT", "0")
+	t.Setenv("START_EXIT", "0")
 
 	return &Installer{appcenterCLIPath: scriptPath}, appDir, logPath
 }

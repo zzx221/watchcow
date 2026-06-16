@@ -165,6 +165,11 @@ func (i *Installer) Uninstall(appName string) error {
 
 // StartApp starts an installed application
 func (i *Installer) StartApp(appName string) error {
+	if i.IsAppStarting(appName) {
+		slog.Info("fnOS app is already starting, skipping start", "appName", appName)
+		return nil
+	}
+
 	slog.Info("Starting fnOS app", "appName", appName)
 
 	cmd := exec.Command(i.appcenterCLIPath, "start", appName)
@@ -191,6 +196,19 @@ func (i *Installer) StopApp(appName string) error {
 	}
 
 	return nil
+}
+
+// IsAppStarting checks if appcenter already has the app in the transient
+// starting state. Starting again in that state can fail with appcenter code 10500.
+func (i *Installer) IsAppStarting(appName string) bool {
+	cmd := exec.Command(i.appcenterCLIPath, "status", appName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		slog.Debug("Failed to check app status", "appName", appName, "error", err, "output", strings.TrimSpace(string(output)))
+		return false
+	}
+
+	return parseAppcenterStatus(string(output)) == "starting"
 }
 
 // IsAppInstalled checks if an app is installed by parsing appcenter-cli list output
@@ -220,4 +238,8 @@ func (i *Installer) IsAppInstalled(appName string) bool {
 	}
 
 	return false
+}
+
+func parseAppcenterStatus(output string) string {
+	return strings.ToLower(strings.TrimSpace(output))
 }
