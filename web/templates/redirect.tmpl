@@ -191,7 +191,7 @@
         async function main() {
             // If force external is enabled, skip local network detection entirely
             if (FORCE_EXTERNAL) {
-                setStatus('External network detected');
+                setStatus('Force external detected, skipping local network detection...');
                 redirectTo(buildExternalURL());
                 return;
             }
